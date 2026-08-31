@@ -1,13 +1,10 @@
-from debug import CInfo, IR
+from debug import CInfo
 
 import lexer
 import tokenizer
 import parse
 import node
-import ircomp
-import low
 import time
-import lowir
 
 from sys import argv
 
@@ -32,7 +29,7 @@ def main(custom = ''):
             if tokenized[i] == "Using":
                 if tokenized[i+1] == "Name":
                     todelete += [i, i, i]
-                    defined += main(f"{cleaned[i+1]}.ayn")
+                    defined += main(f"{cleaned[i+1]}.szn")
     print(tokenized)
     for ind in todelete:
         print(tokenized[ind])
@@ -66,21 +63,17 @@ def main(custom = ''):
     if custom != '': return defined
     else : 
         print("Parsing main file")
-    ircomp.Intermediate.Transform(defined)
-    ir = ircomp.Intermediate.representation
-    print(ir)
-    IR(ir)
 
-    ircomp.Intermediate.representation.insert(0, ircomp.Intermediate.lateinset)
-    lowir.LowIntermediate.Translate(ir)
+
+
     end_time = time.monotonic()
     print()
     struct = time.localtime()
+    btmsg = f"--- Build complete in ~{end_time-start_time} seconds. ---"
     y, m, d, h, mi, s = struct.tm_year, struct.tm_mon, struct.tm_mday, struct.tm_hour, struct.tm_min, struct.tm_sec
-    print([[id.index, id.repr]for id in low.Index.all])
-    print(f";[{y}/{m}/{d}, {h}:{mi} and {s}s] YMD, GMT+3")
-    print(";Zayin 1.0 (Samarkand) unstable")
-    print(f";Build complete in ~{end_time-start_time} seconds.")
+    print(f"--- [{y}/{m}/{d}, {h}:{mi}:{s}] YMD, GMT+{int(time.timezone/3600)*-1} ---")
+    print(' ' * int(len(btmsg) / 2 - 6) + "/// SZN 0 ///")
+    print(btmsg)
     #print(''.join([instr.Format() for instr in low.Translator.assembly]))
 
     

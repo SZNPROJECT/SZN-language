@@ -129,16 +129,7 @@ class Constructor:
                 raw[i-1:i+2] = [new]
 
         return [tokens, raw]
-
-    def ConstructMeta(tokens : list, raw : list):
-
-        for i, token in enumerate(tokens):
-            if token == "Instance" and tokens[i-2] in meta.Meta.instanceSizeTable and tokens[i+1] == "size":
-                new = Extension(tokens[i-1], tokens[i+1])
-                tokens[i-1:i+2] = [new]
-                raw[i-1:i+2] = [new]
-
-        return [tokens, raw]        
+      
     
     def ArgsBuild(tokens, raw):
 

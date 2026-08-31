@@ -1,8 +1,0 @@
-extern int GetProcessHeap{};
-extern int HeapAlloc{};
-
-
-int malloc{int size}
-{
-    return HeapAlloc(GetProcessHeap(), 8, size);
-};

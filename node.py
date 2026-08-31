@@ -1,5 +1,4 @@
 import debug
-import meta
 import tokenizer
 
 class Node:
@@ -219,12 +218,12 @@ class Class(Statement):
 
         finalInstanceSize = 0
         
-        for statement in manifest.members:
-            if isinstance(statement, Declaration):
-                finalInstanceSize += meta.Meta.instanceSizeTable[statement.type]
+        #for statement in manifest.members:
+        #    if isinstance(statement, Declaration):
+        #        finalInstanceSize += meta.Meta.instanceSizeTable[statement.type]
 
-        meta.Meta.instanceSizeTable.update({name: finalInstanceSize})
-        meta.Meta.sizeTable.update({name: 8})
+        #meta.Meta.instanceSizeTable.update({name: finalInstanceSize})
+        #meta.Meta.sizeTable.update({name: 8})
 
 
 class Extension(Operation, Returnable, Overwritable):

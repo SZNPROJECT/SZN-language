@@ -1,16 +1,3 @@
-def IR(ir : list):
-    for context in ir:
-        print(context.name+":")
-        for pseudo in context.data:
-            pseudo.Format()
-        print()
-
-def printMapping(mapping : list["Mapping"]):
-    for map in mapping:
-        print(f"[{map.index.index}]")
-        for usepack in map.map:
-            print(f"  {usepack.purpose} {[reg.name for reg in usepack.registers]}")
-
 def Prepare(any):
     if not isinstance(any, str): any = any.__class__.__name__
     return any
