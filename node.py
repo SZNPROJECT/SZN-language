@@ -21,7 +21,7 @@ class Atomic(Node):
 
 class Overwritable(Node):
     pass
-
+        
 class Content(Atomic, Returnable):
     def __init__(self, value, type : str, order = 0):
         super().__init__(order)
@@ -45,6 +45,10 @@ class Content(Atomic, Returnable):
     
     def GetType(self):
         return self.type
+
+class Direct(Statement):
+    def __init__(self, data : Returnable):
+        self.data = data
 
 class LibraryName(Node):
     def __init__(self, name, order=0):

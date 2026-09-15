@@ -1,5 +1,6 @@
 import tokenizer
 from debug import *
+from extract import Extractor
 from node import *
 
 class Package:
@@ -37,7 +38,8 @@ class Constructor:
         [Declaration, Declaration.empty, [tokenizer.TokenCatalog.GenericTypeTokens, "Name"], ["0", 1]],
         [Declaration, Declaration, [tokenizer.TokenCatalog.GenericTypeTokens, "Name", "Assignment", Returnable], ["0", 1,3]],
         [Declaration, Declaration.auto, ["Var", "Name", "Assignment", Returnable], [1,3]],
-        [Wrapper, Wrapper, [Returnable], [0]]
+        [Wrapper, Wrapper, [Returnable], [0]],
+        [Direct, Direct, ["Direct", Returnable], [1]]
     ], key=lambda x : len(x[2]), reverse=True)
 
     def Pack(tokens : list[str], raw : list[str], borderTokens : list[str]) -> list[list]:
@@ -76,8 +78,7 @@ class Constructor:
         ScopeKeywords = [
         ["OpenB1", "ClosedB1", Returnable],
         ["BlockOpen", "BlockClosed", Block],
-        ["OpenB3", "ClosedB3", None],
-        ["Quote", str]            
+        ["OpenB3", "ClosedB3", None]   
         ]
         for Tpair in ScopeKeywords:
             packed = Constructor.Pack(tokens, raw, Tpair)
@@ -99,6 +100,13 @@ class Constructor:
                 if pair[0] == token:
                     new = pair[1](*pair[2])
                     tokens[i], raw[i] = new, new
+
+        for i, token in enumerate(tokens):
+            if token == "Quote":
+                data = Extractor.storage["string"][0]
+                Extractor.storage["string"].pop(0)
+                new = Content(data, "String")
+                tokens[i], raw[i] = new, new
 
         return [tokens, raw]
     
@@ -233,7 +241,10 @@ class Constructor:
         err = 0
         while any(any(not opr for opr in item.operands) for item in tokens if isinstance(item, Expression)):
             for i, token in enumerate(tokens):
-                if err >= len(tokens) and len(tokens) != 1: raise Exception("Expression building iteration falure.")
+                if err >= len(tokens) and len(tokens) != 1: 
+                    CError("[FATAL] Expression building iteration falure.")
+                    CInfo(f"[PARSE] [ConstructExpression] Expression sequence dump: {', '.join([r.__class__.__name__ + '-' + r.operation if isinstance(r, Expression) else r if isinstance(r, str) else r.__class__.__name__ for r in tokens])}")
+                    Exit()
                 if isinstance(token, Returnable) and token:
                     if isinstance(token, Expression) and any(not opr for opr in token.operands): 
                         err += 1

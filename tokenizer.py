@@ -24,6 +24,7 @@ class TokenCatalog():
         ["[", "OpenB3"],
         ["]", "ClosedB3"],
         ['"', "Quote"],
+        ["'", "Quote"],
 
         ["+", "Plus"],
         ["-", "Minus"],
@@ -31,11 +32,13 @@ class TokenCatalog():
         ["/", "Divide"],
         ["^", "Power"],
 
+        ["sin", "Sine"],
+        ["cos", "Cosine"],
+
         ["--", "ConsMinus"],
         ["++", "ConsPlus"],
         ["+=", "Increment"],
         ["-=", "Decrement"],
-        ["~", "MemAccess"],
             
         ["and", "And"],
         ["or", "Or"],
@@ -62,7 +65,7 @@ class TokenCatalog():
 
         ["using", "Using"],
         ["extern", "External"],
-        ["access", "Access"],
+        ["direct", "Direct"],
 
         ["class", "Class"],
         ["instance", "Instance"],
@@ -102,6 +105,9 @@ class TokenCatalog():
         ["Times",     "BLB",  2, [numeric, numeric], numeric, "AUTO"],
         ["Divide",    "BLB",  2, [numeric, numeric], numeric, "AUTO"],
         ["Power",     "BRB",  3, [numeric, numeric], numeric, "AUTO"],
+
+        ["Sine",       "ULR", 5, [numeric, numeric], numeric, "EXTR"],
+        ["Cosine",       "ULR", 5, [numeric, numeric], numeric, "EXTR"],
             
         ["And",       "BRB", -2, [["Bool"], ["Bool"]], ["Bool"], "EXTR"],
         ["Or",        "BRB", -3, [["Bool"], ["Bool"]], ["Bool"], "EXTR"],

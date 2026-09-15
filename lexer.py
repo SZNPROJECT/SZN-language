@@ -7,25 +7,6 @@ class Lexer:
             " ", "\n"
         ]
 
-    def SeparateStrings(text : str):
-
-        current = ''
-        s = 0
-
-        saveTable = []
-
-        for i, char in enumerate(text):
-            if char in ["'", '"']:
-                if char == current:
-                    saveTable = [text[s:i]]
-                    text[s:i] = ""
-                    current = ''
-                elif current == '':
-                    current = char
-
-        if current != '': raise Exception("String is not ended.")
-        return text, saveTable
-
 
     def GetCharacterType(char : str) -> int:
         if char.isalpha():

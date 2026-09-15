@@ -31,3 +31,7 @@ class TypeError(Error):
 def Abort(err : Error):
     print(f"        {err.__class__.__name__}:\n            {err.message}")
     exit()
+
+def Exit():
+    CInfo("[FATAL] Fatal error, quiting.")
+    exit()

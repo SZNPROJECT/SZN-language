@@ -5,11 +5,13 @@ import tokenizer
 import parse
 import node
 import time
+import extract
+import generator
 
 from sys import argv
 
 def main(custom = ''):
-    if len(argv) == 1 : raise Exception("Incorrect use. Use '\ main.py <pathToFile>'")
+    if len(argv) == 1 : raise Exception("Incorrect use. Use '\\ main.py <pathToFile>'")
     start_time = time.monotonic()
     
 
@@ -17,8 +19,12 @@ def main(custom = ''):
     original = originalfile.read()
     originalfile.close()
 
-    stringed, replace = lexer.Lexer.SeparateStrings(original)
-    separated = lexer.Lexer.Separate(stringed)
+
+    stringExtract, extracted = extract.Extractor.RawExtractSingular(original, "'", '"')
+
+    extract.Extractor.storage.update({"string": stringExtract})
+
+    separated = lexer.Lexer.Separate(extracted)
     bonded = lexer.Lexer.Bond(separated)
     cleaned = lexer.Lexer.Clean(bonded)
     tokenized = tokenizer.Tokenizer.Translate(cleaned)
@@ -44,6 +50,7 @@ def main(custom = ''):
     defined += parse.Constructor.ExpressionsDefine(constructed)
 
     print(original)
+    print(extracted)
     print(separated)
     print(bonded)
     CInfo(f"Cleaned {cleaned}")
@@ -64,7 +71,8 @@ def main(custom = ''):
     else : 
         print("Parsing main file")
 
-
+    generator.Generator.BuildProject(defined)
+    generator.Project.Build(argv[2].strip("'").strip('"'))
 
     end_time = time.monotonic()
     print()
@@ -74,7 +82,7 @@ def main(custom = ''):
     print(f"--- [{y}/{m}/{d}, {h}:{mi}:{s}] YMD, GMT+{int(time.timezone/3600)*-1} ---")
     print(' ' * int(len(btmsg) / 2 - 6) + "/// SZN 0 ///")
     print(btmsg)
-    #print(''.join([instr.Format() for instr in low.Translator.assembly]))
+
 
     
 
