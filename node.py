@@ -2,8 +2,11 @@ import debug
 import tokenizer
 
 class Node:
-    def __init__(self, order = 0):
-        self.order = 0
+    def __init__(self):
+        pass
+
+    def introduce(self):
+        return "humble"
 
 class Returnable(Node):
     
@@ -23,8 +26,7 @@ class Overwritable(Node):
     pass
         
 class Content(Atomic, Returnable):
-    def __init__(self, value, type : str, order = 0):
-        super().__init__(order)
+    def __init__(self, value, type : str):
         self.value = value
         self.type = type
 
@@ -46,23 +48,29 @@ class Content(Atomic, Returnable):
     def GetType(self):
         return self.type
 
+    def introduce(self):
+        return f"{self.value}, {self.type}"
+
 class Direct(Statement):
     def __init__(self, data : Returnable):
         self.data = data
 
+    def introduce(self):
+        data = self.data.introduce()
+        return f'"{data[:15] + ("..." if len(data) > 15 else "")}"'
+
 class LibraryName(Node):
-    def __init__(self, name, order=0):
+    def __init__(self, name):
         self.name = name
 
 class Using(Statement):
-    def __init__(self, lib : LibraryName, eorder=0):
+    def __init__(self, lib : LibraryName):
         self.library = lib
     
 class Reference(Atomic, Returnable, Overwritable):
     typeTable = []
     appearance = []
-    def __init__(self, name : str, order=0):
-        super().__init__(order)
+    def __init__(self, name : str):
         noticed = False
         for item in Reference.appearance:
             if item[0] == name:
@@ -95,6 +103,9 @@ class Reference(Atomic, Returnable, Overwritable):
             if pair[0] == self.name : return pair[1]
 
         debug.Abort(debug.Error(f"Unknown variable '{self.name}'"))
+
+    def introduce(self):
+        return f"{self.name}"
         
 
 class Declaration(Statement):
@@ -111,9 +122,11 @@ class Declaration(Statement):
     def empty(name : Reference, type : str):
         return Declaration(name, type, Content.null())
 
-class ArgSet(Statement):
-    def __init__(self, args : list[Returnable], order=0):
-        super().__init__(order)
+    def introduce(self):
+        return f"{self.name}"
+
+class ArgSet(Statement): #to be reworked
+    def __init__(self, args : list[Returnable]):
         self.args = args
 
 class Call(Returnable, Statement):
@@ -140,8 +153,7 @@ class Block(Statement):
         self.members = Members
 
 class FunctionDeclaration(Statement):
-    def __init__(self, Type : str, FuncName : str, DeclareBlock : Block, MainBlock : Block, order=0):
-        super().__init__(order)
+    def __init__(self, Type : str, FuncName : str, DeclareBlock : Block, MainBlock : Block):
 
         self.name = FuncName
         self.type = Type
@@ -161,17 +173,34 @@ class FunctionDeclaration(Statement):
         
 
 class Assignment(Operation):
-    def __init__(self, target : Overwritable, value : Returnable,  order=0):
+    def __init__(self, target : Overwritable, value : Returnable):
         self.target = target
         self.value = value
-        super().__init__(order)
+        self.external = None
+
+    def ext(target : Overwritable, sourse : Content):
+        new = Assignment(target, None)
+        new.external = sourse
+        return new
+
+    def introduce(self):
+        return self.target.introduce()
 
 class Expression(Operation, Returnable):
-    def __init__(self, operation : str,  operands : list[Returnable], order=0):
-        super().__init__(order)
+    all : list['Expression'] = []
+    def __init__(self, operation : str,  operands : list[Returnable]):
         self.operands = operands
         self.operation = operation
         self.finalType = None
+        Expression.all += [self]
+
+    def Serialize(self):
+        for op in self.operands:
+            if isinstance(op, Expression) and op.operation == self.operation:
+                op.Serialize()
+                self.operands += op.operands
+                self.operands.remove(op)
+
 
     def GetType(self) -> str:
         return self.finalType
@@ -182,13 +211,11 @@ class Access(Statement):
         self.pointer = pointer
 
 class Wrapper(Statement):
-    def __init__(self, expr : Returnable, order=0):
-        super().__init__(order)
+    def __init__(self, expr : Returnable):
         self.expression = expr
 
 class If(Statement):
-    def __init__(self, condition : Returnable, stmt : Statement, elseStmt : Statement, order=0):
-        super().__init__(order)
+    def __init__(self, condition : Returnable, stmt : Statement, elseStmt : Statement):
         self.condition = condition 
         self.statement = stmt
         self.elseStatement = elseStmt
@@ -197,17 +224,15 @@ class If(Statement):
         return If(cond, run, None)
     
     def guard(cond : Returnable, ret : Returnable):
-        return If(cond, Return(ret, ret.order), None)
+        return If(cond, Return(ret), None)
     
 class While(Statement):
-    def __init__(self, condition : Returnable, stmt : Statement, order=0):
-        super().__init__(order)
+    def __init__(self, condition : Returnable, stmt : Statement):
         self.condition = condition
         self.statement = stmt
 
 class Return(Statement):
-    def __init__(self, toRet : Returnable, order=0):
-        super().__init__(order)
+    def __init__(self, toRet : Returnable):
         self.toReturn = toRet
 
     def void():
@@ -219,15 +244,6 @@ class Class(Statement):
         self.name = name
         self.init = init
         self.manifest = manifest
-
-        finalInstanceSize = 0
-        
-        #for statement in manifest.members:
-        #    if isinstance(statement, Declaration):
-        #        finalInstanceSize += meta.Meta.instanceSizeTable[statement.type]
-
-        #meta.Meta.instanceSizeTable.update({name: finalInstanceSize})
-        #meta.Meta.sizeTable.update({name: 8})
 
 
 class Extension(Operation, Returnable, Overwritable):

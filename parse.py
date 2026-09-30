@@ -11,11 +11,13 @@ class Package:
     def Elevate(self, context):
         if self.type == Returnable:
             internalComma = "Comma" in self.content[0]
-            backNamed = context[-1] == "Name" 
-            if internalComma or backNamed:
+            backNamed = len(context)>1 and context[-1] == "Name"
+            empty = self.content[0] == []
+            if internalComma or backNamed or empty:
                 return Constructor.ArgsBuild(*Constructor.RecursiveConstruct(*self.content))
             else:
-                return Constructor.RecursiveConstruct(*self.content)[0]
+                constr = Constructor.RecursiveConstruct(*self.content)
+                return constr[0][0] 
         elif self.type == Block:
             return Block(Constructor.Construct(*Constructor.Group(*self.content)))
 
@@ -26,6 +28,7 @@ class Constructor:
         [Access, Access, ["Access", Returnable, "Assignment", Returnable], [1,3]],
         [Assignment, Assignment, [Reference, "Assignment", Returnable], [0,2]],
         [Assignment, Assignment, [Extension, "Assignment", Returnable], [0,2]],
+        [Assignment, Assignment.ext, [Reference, "External", Content], [0,2]],
         [FunctionDeclaration, FunctionDeclaration, [tokenizer.TokenCatalog.GenericTypeTokens, "Name", Block, Block], ["0", 1, 2, 3]],
         [FunctionDeclaration, FunctionDeclaration.ext, ["External", tokenizer.TokenCatalog.GenericTypeTokens, "Name", Block], ["1", 2, 3]],
         [FunctionDeclaration, FunctionDeclaration.single, [tokenizer.TokenCatalog.GenericTypeTokens, "Name", Block], ["1", 2, 3]],
@@ -184,7 +187,7 @@ class Constructor:
 
         for i, token in enumerate(tokens): 
             if token in ops:
-                new = Expression(token, None, None)
+                new = Expression(token, None)
                 new.operands = [None] if GetOpCount(token) == 1 else [None, None]
                 new.operation = token
                 tokens[i], raw[i] = new, new
@@ -196,9 +199,10 @@ class Constructor:
         opConfs = tokenizer.TokenCatalog.OperatorsConfig
 
         for i, token in enumerate(tokens):
-            if isinstance(token, Expression) and i == 0 or (isinstance(token, Expression) and token.operation == "Minus" and not isinstance(tokens[i-1], Returnable)):
-                tokens[i] = Expression("Negative", [None], token.order)
-                print("Negative")
+            if (isinstance(token, Expression) and i == 0  and token.operation == "Minus") or (isinstance(token, Expression) and token.operation == "Minus" and not isinstance(tokens[i-1], Expression)):
+                new = Expression("Negative", [None])
+                tokens[i] = new
+                raw[i] = new
 
         def GetPower(token : str) -> int:
             for opc in opConfs:
@@ -327,6 +331,9 @@ class Constructor:
                     if mode == "AUTO":
                         prior = 0
                         for op in node.operands:
+                            print(op)
+                            print(node.operation)
+                            print(node.operands)
                             opPriority = None
                             opType = op.GetType()
                             for i, type in enumerate(autoDefinitions):

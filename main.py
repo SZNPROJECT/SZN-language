@@ -7,6 +7,7 @@ import node
 import time
 import extract
 import generator
+import optimize
 
 from sys import argv
 
@@ -49,6 +50,8 @@ def main(custom = ''):
     constructed = parse.Constructor.Construct(grouped[0], grouped[1])
     defined += parse.Constructor.ExpressionsDefine(constructed)
 
+    optimize.Optimizer.SerializeExpressions()
+
     print(original)
     print(extracted)
     print(separated)
@@ -71,7 +74,7 @@ def main(custom = ''):
     else : 
         print("Parsing main file")
 
-    generator.Generator.BuildProject(defined)
+    generator.Generator.TranslateStatementSet(defined)
     generator.Project.Build(argv[2].strip("'").strip('"'))
 
     end_time = time.monotonic()

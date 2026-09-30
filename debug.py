@@ -2,15 +2,14 @@ def Prepare(any):
     if not isinstance(any, str): any = any.__class__.__name__
     return any
 
-def CWarninig(any):
-    print(fr"|||WRN||| {Prepare(any)}")
+def CWarninig(any, nt = False):
+    print(fr"|||WRN||| {Prepare(any)}", end="" if nt else "\n")
 
-def CInfo(any):
-    print(fr"///INF\\\ {Prepare(any)}")
+def CInfo(any, nt = False):
+    print(fr"///INF\\\ {Prepare(any)}", end="" if nt else "\n")
 
-def CError(any):
-    print(fr"<<<ERR>>> {Prepare(any)}")
-
+def CError(any, nt = False):
+    print(fr"<<<ERR>>> {Prepare(any)}", end="" if nt else "\n")
 
 class Error():
     def __init__(self, message : str):
