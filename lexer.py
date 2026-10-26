@@ -34,7 +34,7 @@ class Lexer:
         return result
     
     def Bond(elements : list) -> list:
-        keywords = TokenCatalog.GetAllKeywords()
+        keywords = TokenCatalog.TranslationTable.keys()
         special = []
         
         for keyword in keywords:

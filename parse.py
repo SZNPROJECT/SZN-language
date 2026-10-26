@@ -1,419 +1,225 @@
-import tokenizer
-from debug import *
-from extract import Extractor
+# 5th version of that script
 from node import *
+from functools import reduce
+from collections.abc import Iterable
+from tokenizer import Token, TokenCatalog
+from difflib import SequenceMatcher
 
-class Package:
-    def __init__(self, content : list[list, list], Convertable : type):
-        self.content = content
-        self.type = Convertable
+class ParseException (Exception):
+    def __init__(self, info : str, fix : str = None, expected = "something..."):
+        self.info = info
+        self.exp = expected 
+        self.fix = fix if fix != None else f"Add \"{expected}\"" 
 
-    def Elevate(self, context):
-        if self.type == Returnable:
-            internalComma = "Comma" in self.content[0]
-            backNamed = len(context)>1 and context[-1] == "Name"
-            empty = self.content[0] == []
-            if internalComma or backNamed or empty:
-                return Constructor.ArgsBuild(*Constructor.RecursiveConstruct(*self.content))
+        super().__init__(f'\033[1;41mSyntaxError: {self.info}\033[0m\n\033[14;44mFix: {self.fix}\033[0m')
+
+class Result:
+    def __init__(self, value, end : int):
+        self.value = value
+        self.end = end
+
+    def __bool__(self):
+        return not isinstance(self.value, ParseException)
+
+    def __str__(self):
+        s = lambda obj: [s(x) for x in obj] if isinstance(obj, list) else str(obj)
+        return f"{s(self.value)} ending at {self.end}"
+
+class c:
+
+    def match(expected : Token):
+        def run(p, tokens : list[Token]):
+            if p >= len(tokens): return Result(ParseException("Insufficient length."), p)
+            if tokens[p].token == expected.token:
+                return Result(tokens[p], p + 1)
             else:
-                constr = Constructor.RecursiveConstruct(*self.content)
-                return constr[0][0] 
-        elif self.type == Block:
-            return Block(Constructor.Construct(*Constructor.Group(*self.content)))
+                return Result(ParseException(f"Expected \"{expected.raw}\", got \"{tokens[p].raw}\".", f"Replace \"{tokens[p].raw}\" with \"{expected.raw}\"."), p)
+        return run
+
+    def unfold(parser):
+        def run(p, tokens : list[Token]):
+            def subf(s):
+                if not isinstance(item, list): return s
+                for item in s:
+                    if isinstance(item, (list, tuple)):
+                        yield from subf(item)
+                    else:
+                        yield item
+            r = parser(p, tokens)
+            if isinstance(r, list): r.value = list(subf(r.value))
+            return r.value
+
+        return run
+
+    def map(parser, f):
+        def run(p, tokens):
+            r = parser(p, tokens)
+            if r: return Result(f(r.value), r.end)
+            return r
+        return run
+    
+    def may(parser):
+        def run(p, tokens : list[Token]):
+            r = parser(p, tokens)
+            if r : return r
+            else : return Result([], p)
+        return run
+    
+    def many(parser):
+        def run(p, tokens : list[Token]):
+            acc = []
+            while True:
+                r = parser(p,tokens)
+                if r.end == p: return Result(acc, p)
+                if r:
+                    p = r.end
+                    acc.append(r.value)
+                else: return Result(acc, p)
+        return run
+
+    def until(parser, stop):
+        def run(p, tokens : list[Token]):
+            acc = []
+            while True:
+                r = parser(p,tokens)
+                #if r.end == p: return Result(acc, p)
+                if r:
+                    p = r.end
+                    acc.append(r.value)
+                elif stop(p,tokens): return Result(acc, p)
+                else : return r
+        return run
+
+    def seq(*parsers):
+        def run(p, tokens : list[Token]):
+            acc = []
+            cur = p
+            for parser in parsers:
+                r = parser(cur, tokens)
+                if not r:
+                    return r                
+                acc.append(r.value)
+                cur = r.end
+            return Result(acc, cur)
+        return run
+    
+    def any(*parsers):
+        def run(p, tokens : list[Token]):
+            rs = []
+            rf = []
+            for par in parsers:
+                res = par(p, tokens)
+                if res: rs.append(res)
+                else: rf.append(res)
+
+            if len(rs) == 0:
+                best = rf[0]
+                for res in rf:
+                    if res.end > best.end: best = res
+                return best
+            else : return rs[0] 
+        return run
+    
+    def sep(content_parser, separator_parser):
+        return c.map(c.seq(c.many(c.seq(content_parser, separator_parser)), content_parser), lambda x: [s for p in x[0] for s in p] + [x[1]])
+
+            
 
 class Constructor:
+    def Construct(tokens : list[Token]):
+        t = lambda x, y = None: c.match(Token(x, y)) 
+        n = c.match(Token("Name", "Name"))
 
-    signatures = sorted([
-        [Class, Class, ["Class", "Name", Block, Block], ["1", 2, 3]],
-        [Access, Access, ["Access", Returnable, "Assignment", Returnable], [1,3]],
-        [Assignment, Assignment, [Reference, "Assignment", Returnable], [0,2]],
-        [Assignment, Assignment, [Extension, "Assignment", Returnable], [0,2]],
-        [Assignment, Assignment.ext, [Reference, "External", Content], [0,2]],
-        [FunctionDeclaration, FunctionDeclaration, [tokenizer.TokenCatalog.GenericTypeTokens, "Name", Block, Block], ["0", 1, 2, 3]],
-        [FunctionDeclaration, FunctionDeclaration.ext, ["External", tokenizer.TokenCatalog.GenericTypeTokens, "Name", Block], ["1", 2, 3]],
-        [FunctionDeclaration, FunctionDeclaration.single, [tokenizer.TokenCatalog.GenericTypeTokens, "Name", Block], ["1", 2, 3]],
-        [Return, Return, ["Return", Returnable], [1]],
-        [Return, Return.void, ["Return"], []],
-        [While, While, ["While", Returnable, Statement], [1, 2]],
-        [If, If.single, ["If", Returnable, Statement], [1, 2]],
-        [If, If, ["If", Returnable, Statement, "Else", Statement], [1, 2, 4]],
-        [If, If.guard, ["Return", Returnable, "If", Returnable], [3, 1]],
-        [Declaration, Declaration.empty, [tokenizer.TokenCatalog.GenericTypeTokens, "Name"], ["0", 1]],
-        [Declaration, Declaration, [tokenizer.TokenCatalog.GenericTypeTokens, "Name", "Assignment", Returnable], ["0", 1,3]],
-        [Declaration, Declaration.auto, ["Var", "Name", "Assignment", Returnable], [1,3]],
-        [Wrapper, Wrapper, [Returnable], [0]],
-        [Direct, Direct, ["Direct", Returnable], [1]]
-    ], key=lambda x : len(x[2]), reverse=True)
+        def _returnable(allow_exp = True):
+            # No sign of God past this comment.
+            operation = c.any(*[t(token) for token in TokenCatalog.GetOperators()])
+            unary = c.any(*[t(token) for token in TokenCatalog.GetOperators() if TokenCatalog.OperatorsConfig[token][2]])
+            right = c.any(*[t(token) for token in TokenCatalog.GetOperators() if TokenCatalog.OperatorsConfig[token][0]])
+            def fold(parser : "function") -> Expression: #expects the set to be valid, expamle: ret-able, opToken, ret-able...
+                def run(p, tokens : list[Token | Returnable]):
+                    out = parser(p, tokens)
+                    if isinstance(out.value, ParseException): return out
+                    seq = out.value
+                    for i, token in enumerate(seq):
+                        if i % 2:
+                            seq[i] = Expression(token.token, [None, None])
+                    seq[1].operands[0] = seq[0]
+                    seq[-2].operands[1] = seq[-1]
+                    seq.pop(0)
+                    seq.pop()
+                    getPriority = lambda n: TokenCatalog.OperatorsConfig[n.operation][1]
+                    getAssociativity = lambda n: TokenCatalog.OperatorsConfig[n.operation][0]
+                    for i,e in enumerate(seq):
+                        if (i+1)%2 == 0:
+                            l = getPriority(seq[i-1])
+                            r = getPriority(seq[i+1])
+                            if l>r: seq[i-1].operands[1] = e
+                            elif r>l: seq[i+1].operands[0] = e
+                            else: 
+                                d = getAssociativity(seq[i-1])
+                                seq[i+d].operands[int(d*-1/2 + 0.5)] = e
 
-    def Pack(tokens : list[str], raw : list[str], borderTokens : list[str]) -> list[list]:
-        start, end, opened, closed = 0, 0, 0, 0
-        oT, cT = borderTokens[0], borderTokens[1] if len(borderTokens) > 2 else None 
+                    a = 0
+                    for i in range(0, len(seq)-1, 2):
+                        seq.pop(a+i+1)
+                        a -= 1
+                    while len(seq) > 1:
+                        for i, e in enumerate(seq):
+                            if not None in e.operands:
+                                l = seq[i-1] if i != 0 else None
+                                r = seq[i+1] if i < len(seq) - 1 else None
+                                lia = (l != None) and (l.operands[1] == None)
+                                ria = (r != None) and (r.operands[0] == None)
+                                if lia and ria:
+                                    lp, rp = getPriority(l), getPriority(r)
+                                    if lp > rp:
+                                        l.operands[1] = e
+                                    elif rp > lp:
+                                        r.operands[0] = e
+                                    else:
+                                        seq[i+getAssociativity(r)].operands[int(getAssociativity(r)*-1/2 + 0.5)] = e
+                                elif lia:
+                                    l.operands[1] = e
+                                elif ria:
+                                    r.operands[0] = e
+                                else: continue
+                                seq.pop(i)
+                    seq[0].ComputeFinalType()
+                    return Result(seq[0], out.end)
 
-        if cT == None:
-            for i, token in enumerate(tokens):
-                if token == borderTokens[0]: 
-                    if opened == 0 : start = i
-                    opened += 1
-                if opened == 2: 
-                    end = i
-                    break
-        else:
-            for i, token in enumerate(tokens):
-                opened += int(token == oT)
-                closed += int(token == cT)
-                
-                if token == oT and opened == 1: start = i
-                if opened == closed and opened + closed != 0:
-                    end = i
-                    break
-        
-        if [start, end] != [0, 0]: 
-            p = [Package([tokens[start+1:end], raw[start+1:end]], borderTokens[2])]
-            raw[start:end+1] = p
-            tokens[start:end+1] = p
-        
-        for i, token in enumerate(tokens):
-            if isinstance(token, Package):
-                Constructor.PackAll(token.content[0], token.content[1])
-        return [tokens, raw]
-    
-    def PackAll(tokens, raw):
-        ScopeKeywords = [
-        ["OpenB1", "ClosedB1", Returnable],
-        ["BlockOpen", "BlockClosed", Block],
-        ["OpenB3", "ClosedB3", None]   
+                        
+                return run
+
+            def run(p, tokens : list[Token]):
+                execute = []
+                if allow_exp : execute = [fold(c.any(c.sep(_returnable(allow_exp=False), operation)))]
+                reference = c.map(n, lambda x: Reference(x.raw))
+                number = c.any(c.map(c.seq(t("Number"), t("Dot"), t("Number")), lambda x: Content(float(''.join([y.raw for y in x])), "Float")), c.map(t("Number"), lambda x: Content(int(x.raw), "Integer")))
+                call = c.map(c.seq(n, t("OpenB1"), c.may(c.sep(_returnable(), t("Comma"))), t("ClosedB1")), lambda x: Call(x[0].raw, [y[0] for i, y in enumerate(x[2]) if (i + 1) % 2 != 0]))
+                execute += [number, call, reference]
+                o = c.any(*execute)(p, tokens)
+                return o
+
+            return run
+
+        def _return():
+            return c.map(c.seq(t("Return"), _returnable()), lambda x: Return(x[1]))
+
+        def _block():
+            return c.map(c.seq(t("BlockOpen"), c.until(c.any(*statements), t("BlockClosed"))), lambda x: Block([s for s in x[1]]))
+
+        def _argumentDeclaration():
+            return c.map(c.seq(t("OpenB1"), c.may(c.sep(n, t("Comma"))), t("ClosedB1")), lambda x: ArgumentDeclatation([y.raw for i, y in enumerate(x[1]) if (i + 1) % 2 != 0]))
+        def _functionDeclaration():
+            return c.map(c.seq(t("Function"), n, _argumentDeclaration(), _block()), lambda x: FunctionDeclaration(x[1].raw, x[2], x[3]))
+
+        statements = [
+            _return()
         ]
-        for Tpair in ScopeKeywords:
-            packed = Constructor.Pack(tokens, raw, Tpair)
-            while Tpair[0] in packed[0]:
-                packed = Constructor.Pack(packed[0], packed[1], Tpair)
-
-        return packed
-    
-    def ConstructKeywords(tokens : list, raw : list):
-
-        convert = [
-            ["Null",  Content,[None, "Null"]],
-            ["True",  Content,[True, "Boolean"]],
-            ["False", Content,[False, "Boolean"]]
+        root_statements = [
+            _functionDeclaration()
         ]
+        AST = c.seq(*root_statements)(0,tokens)
+        print(AST)
+        return AST.value
         
-        for i, token in enumerate(tokens):
-            for pair in convert:
-                if pair[0] == token:
-                    new = pair[1](*pair[2])
-                    tokens[i], raw[i] = new, new
-
-        for i, token in enumerate(tokens):
-            if token == "Quote":
-                data = Extractor.storage["string"][0]
-                Extractor.storage["string"].pop(0)
-                new = Content(data, "String")
-                tokens[i], raw[i] = new, new
-
-        return [tokens, raw]
-    
-    def ConstructNames(tokens : list, raw : list):
-
-        ignore = tokenizer.TokenCatalog.GenericTypeTokens + ["Var", "Class"]
-
-        for i, token in enumerate(tokens):
-            if token == "Name":                
-                if i < len(tokens) - 1: 
-                    if isinstance(tokens[i+1], ArgSet):
-                        ref = Call(raw[i], raw[i+1])
-                        tokens[i:i+2], raw[i:i+2] = [ref], [ref]
-                        continue
-                if i != 0:
-                    if tokens[i-1] in ignore: continue
-                ref = Reference(raw[i])
-                tokens[i], raw[i] = ref, ref
-
-        return [tokens, raw]
-
-    def ConstructExtensions(tokens : list, raw : list):
-
-        for i, token in enumerate(tokens):
-            if token == "Dot" and isinstance(tokens[i-1], Returnable) and isinstance(tokens[i+1], (Reference, Call)):
-                new = Extension(tokens[i-1], tokens[i+1])
-                tokens[i-1:i+2] = [new]
-                raw[i-1:i+2] = [new]
-
-        return [tokens, raw]
-      
-    
-    def ArgsBuild(tokens, raw):
-
-        expectedArg = True
-        arg = []
-
-        for i, token in enumerate(tokens):
-            if isinstance(token, Returnable):
-                if expectedArg:
-                    expectedArg = False
-                    arg += [token]
-                else:
-                    Abort(SyntaxError("Expected an argument."))
-            elif token == "Comma":
-                if expectedArg:
-                    Abort(SyntaxError("Expected comma."))
-                else:
-                    expectedArg = True
-
-
-
-        return ArgSet(arg)
-
-    def ConstructAtomic(tokens, raw):
-
-        ops = tokenizer.TokenCatalog.GetOperators()
-        opConfs = tokenizer.TokenCatalog.OperatorsConfig
-
-        def GetOpCount(token : str) -> int:
-            for opc in opConfs:
-                if opc[0] == token : return 1 if opc[1][0] == 'U' else 2
-            
-            return None
-        
-        for i, token in enumerate(tokens):
-            if token == "Dot" and tokens[i-1] == "Number" and tokens[i+1] == "Number":
-                new = Content.from_pair(int(raw[i-1]), int(raw[i+1]))
-                tokens[i-1:i+2], raw[i-1:i+2] = [new], [new]
-
-        for i, token in enumerate(tokens):
-            if token == "Number":
-                new = Content.from_num(int(raw[i]))
-                tokens[i], raw[i] = new, new
-
-        for i, token in enumerate(tokens): 
-            if token in ops:
-                new = Expression(token, None)
-                new.operands = [None] if GetOpCount(token) == 1 else [None, None]
-                new.operation = token
-                tokens[i], raw[i] = new, new
-
-        return [tokens, raw]
-
-    def ConstructExpressions(tokens : list, raw : list):
-
-        opConfs = tokenizer.TokenCatalog.OperatorsConfig
-
-        for i, token in enumerate(tokens):
-            if (isinstance(token, Expression) and i == 0  and token.operation == "Minus") or (isinstance(token, Expression) and token.operation == "Minus" and not isinstance(tokens[i-1], Expression)):
-                new = Expression("Negative", [None])
-                tokens[i] = new
-                raw[i] = new
-
-        def GetPower(token : str) -> int:
-            for opc in opConfs:
-                if opc[0] == token : return opc[2]
-
-            return None
-        
-        def GetAssocOrder(token : str) -> int:
-            for opc in opConfs:
-                if opc[0] == token: return 1 if opc[1][1] == 'R' else -1
-            
-            return None
-
-        def GetOperandSide(token : str) -> int:
-            for opc in opConfs:
-                if opc[0] == token: 
-                    dt = opc[1][2]
-                    if dt == 'R':
-                        return 1
-                    elif dt == 'L':
-                        return -1
-                    else: return 0
-            
-            return None
-
-        def GetOperandsType(node : Expression):
-            if isinstance(node, Expression):
-                for opc in tokenizer.TokenCatalog.OperatorsConfig:
-                    if opc[0] == node.operation: return opc[3]
-
-        def GetReturnableType(node : Returnable):             
-            if isinstance(node, Expression):
-                for opc in tokenizer.TokenCatalog.OperatorsConfig:
-                    if opc[0] == node.operation: return opc[4]
-            else:
-                type = node.GetType()
-                if isinstance(type, str): return [type]
-                return type
-
-        err = 0
-        while any(any(not opr for opr in item.operands) for item in tokens if isinstance(item, Expression)):
-            for i, token in enumerate(tokens):
-                if err >= len(tokens) and len(tokens) != 1: 
-                    CError("[FATAL] Expression building iteration falure.")
-                    CInfo(f"[PARSE] [ConstructExpression] Expression sequence dump: {', '.join([r.__class__.__name__ + '-' + r.operation if isinstance(r, Expression) else r if isinstance(r, str) else r.__class__.__name__ for r in tokens])}")
-                    Exit()
-                if isinstance(token, Returnable) and token:
-                    if isinstance(token, Expression) and any(not opr for opr in token.operands): 
-                        err += 1
-                        continue
-                    r = tokens[i+1] if i + 1 <= len(tokens) - 1 and isinstance(tokens[i+1], Expression) and GetOperandSide(tokens[i+1]) != 1 else None
-                    l = tokens[i-1] if i != 0 and isinstance(tokens[i-1], Expression) and GetOperandSide(tokens[i-1]) != -1 else None
-                    #if r and not isinstance(r, Call) : r = r if bool(set(GetOperandsType(r)[0]) & set(GetReturnableType(token))) else None
-                    #if l and not isinstance(l, Call) : l = l if bool(set(GetOperandsType(l)[1]) & set(GetReturnableType(token))) else None
-
-                    if l and r:
-                        diff = GetPower(r.operation) - GetPower(l.operation)
-                        if diff == 0:
-                            x = GetAssocOrder(r.operation)
-                        else:
-                            x = (1, -1)[diff < 0]
-
-                    elif l and not r:
-                        x = -1
-                    elif (not l) and r:
-                        x = 1
-                    else:
-                        err += 1
-                        continue
-                    err = 0
-                    ix = tokens[i+x]
-    
-                    if ix.operands == [None]:
-                        ix.operands[0] = token
-                    else:
-                        ix.operands[int(-x/2+0.5)] = token
-                    tokens.pop(i)
-                    raw.pop(i)
-                    
-        return [tokens, raw]
-    
-    def ConstructStatements(tokens : list, raw : list):
-
-        def isMatchingItem(token, sigpart):
-            if isinstance(sigpart, list):
-                for element in sigpart:
-                    if isMatchingItem(token, element): return True
-                return False
-            elif isinstance(sigpart, type):
-                return isinstance(token, sigpart)
-            else: return token == sigpart
-                
-        def GetSignatureMissPoint(tokenSegment : list, rawSegment : list, signature : list):
-            for i, token in enumerate(tokenSegment):
-                if i >= len(signature) or i >= len(tokenSegment): 
-                    Abort(Error(tokenSegment))
-                if not isMatchingItem(token, signature[i]):
-                    return i
-            return None
-        
-        def ExtractRaw(sig : list):
-            result = []
-            for index in sig[3]:
-                if isinstance(index, int):result += [raw[index]]
-                else:result += [tokens[int(index)]]
-            return result
-        
-        for sig in Constructor.signatures:
-            if len(sig[2]) <= len(tokens):
-                point = GetSignatureMissPoint(tokens, raw, sig[2])
-                if point == None: 
-                    new = [sig[1](*ExtractRaw(sig))]
-                    return [new, new]
-
-        Abort(Error(f"Can't resolve {raw}"))
-        
-    
-    def ExpressionsDefine(AST : list[Node]):
-
-        autoDefinitions = ["Integer", "Float"]
-
-        def GetExternalType(node : Expression):
-            for opc in tokenizer.TokenCatalog.OperatorsConfig:
-                if opc[0] == node.operation:
-                    mode = opc[5]
-                    if mode == "AUTO":
-                        prior = 0
-                        for op in node.operands:
-                            print(op)
-                            print(node.operation)
-                            print(node.operands)
-                            opPriority = None
-                            opType = op.GetType()
-                            for i, type in enumerate(autoDefinitions):
-                                if type in opType: opPriority = i
-                            if opPriority > prior : prior = opPriority
-                        return autoDefinitions[prior]
-                    elif mode == "EXTR":
-                        return opc[4][0]
-                    else:
-                        return opc[3][0][0]
-
-        
-        def SingleDefine(token : Expression):
-            for opr in token.operands:
-                if isinstance(opr, Expression):
-                    SingleDefine(opr)
-                if isinstance(opr, Call):
-                    for arg in opr.arg.args:
-                        if isinstance(arg, Expression) : SingleDefine(arg)
-            token.finalType = GetExternalType(token)
-
-        for node in AST:
-            if not hasattr(node, '__dict__') : continue 
-            for name, attr in vars(node).items():
-                if isinstance(attr, Block): attr.members = Constructor.ExpressionsDefine(attr.members) 
-                if isinstance(attr, Expression) : SingleDefine(attr)
-            if isinstance(node, Declaration) and node.type == None: 
-                node.type = node.value.GetType()
-                for pair in Reference.typeTable:
-                    if pair[0] == node.name : pair[1] = node.type
-
-        return AST
-
-    
-    def RecursiveConstruct(tokens, raw):
-        for i, token in enumerate(tokens):
-            if isinstance(token, Package):
-                result = token.Elevate(tokens[0:i])
-                tokens[i] = result
-                raw[i] = result
-        
-        out = Constructor.ConstructKeywords(tokens, raw)
-        out = Constructor.ConstructNames(*out)
-        out = Constructor.ConstructAtomic(*out)
-        out = Constructor.ConstructExtensions(*out)
-        out = Constructor.ConstructExpressions(*out)
-
-        return out
-    
-    def ConstructSingle(tokens, raw):
-        rec = Constructor.RecursiveConstruct(tokens, raw)
-        stmt = Constructor.ConstructStatements(rec[0], rec[1])
-
-        return stmt[0]
-
-    def Group(tokens : list, raw : list):
-        if len(tokens) == 0 : return [tokens, raw]
-        nt, nr = [], []
-        stackT, stackR = [], []
-
-        for i, token in enumerate(tokens):
-            if token == "EOL":
-                nt += [stackT]
-                nr += [stackR]
-                stackT, stackR = [], []
-            else:
-                stackT += [token]
-                stackR += [raw[i]]
-
-        if token != "EOL":
-            nt += [stackT]
-            nr += [stackR]
-
-
-        return [nt, nr]
-
-    def Construct(tokensG, rawG):
-        for i, group in enumerate(tokensG):
-            new = Constructor.ConstructSingle(group, rawG[i])[0]
-            tokensG[i] = new
-            rawG[i] = new
-
-        return tokensG

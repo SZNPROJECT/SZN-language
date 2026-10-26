@@ -8,6 +8,9 @@ class Node:
     def introduce(self):
         return "humble"
 
+    def __str__(self):
+        return self.__class__.__name__
+
 class Returnable(Node):
     
     def GetType(self) -> str:
@@ -30,16 +33,16 @@ class Content(Atomic, Returnable):
         self.value = value
         self.type = type
 
-    def from_num(Num : int): #Numeric int-like
+    def from_num(Num : int): 
         return Content(Num, "Integer")
 
-    def from_pair(Num1 : int, Num2 : int): #Numeric float-like
+    def from_pair(Num1 : int, Num2 : int): 
         return Content(float(f"{Num1}.{Num2}"), "Float")
 
-    def from_string(String : str): #String
+    def auto_str(String : str):
         return Content(String, "String")
 
-    def from_bool(State : bool): #Boolean
+    def from_bool(State : bool):
         return Content(State, "Bool")
     
     def null():
@@ -69,34 +72,9 @@ class Using(Statement):
     
 class Reference(Atomic, Returnable, Overwritable):
     typeTable = []
-    appearance = []
     def __init__(self, name : str):
-        noticed = False
-        for item in Reference.appearance:
-            if item[0] == name:
-                item[1] += 1
-                noticed = True
-
-        
-        if not noticed:
-            Reference.appearance += [[name, 1]]
-        
         self.name = name
 
-    def GetAppearance(name : str) -> int:
-        for item in Reference.appearance:
-            if item[0] == name:
-                return item[1]
-            
-    def AddAppearance(name : str, amount : int):
-        for item in Reference.appearance:
-            if item[0] == name:
-                item[1] += amount
-            
-    def ReduceAppearance(name : str):
-        for item in Reference.appearance:
-            if item[0] == name:
-                item[1] -= 1
 
     def GetType(self):
         for pair in Reference.typeTable:
@@ -125,14 +103,10 @@ class Declaration(Statement):
     def introduce(self):
         return f"{self.name}"
 
-class ArgSet(Statement): #to be reworked
-    def __init__(self, args : list[Returnable]):
-        self.args = args
-
 class Call(Returnable, Statement):
     typeTable = []
 
-    def __init__(self, name : str, arg : ArgSet):
+    def __init__(self, name : str, arg : list[Returnable]):
         self.name = name
         self.arg = arg
 
@@ -146,30 +120,30 @@ class Call(Returnable, Statement):
         
         print(self.name, Call.typeTable)
         return False
-           
 
 class Block(Statement):
     def __init__(self, Members : list[Node]):
         self.members = Members
 
+class ArgumentDeclatation(Node):
+    def __init__(self, args : list[Returnable]):
+        self.args = args
+
 class FunctionDeclaration(Statement):
-    def __init__(self, Type : str, FuncName : str, DeclareBlock : Block, MainBlock : Block):
+    def __init__(self, FuncName : str, Declaration : ArgumentDeclatation, Body : Block):
 
         self.name = FuncName
-        self.type = Type
-        self.dec = DeclareBlock
-        self.main = MainBlock
+        self.dec = Declaration
+        self.body = Body
         self.external = False
 
-        Call.typeTable += [[FuncName, Type]]
 
-    def ext(Type : str, FuncName : str, DeclareBlock : Block):
-        new= FunctionDeclaration(Type, FuncName, DeclareBlock, Block([]))
+    def ext(Type : str, FuncName : str, Declaration : ArgumentDeclatation):
+        new = FunctionDeclaration(FuncName, Declaration, Block([]))
         new.external = True
         return new
 
-    def single(Type : str, FuncName : str, DeclareBlock : Block):
-        return FunctionDeclaration(Type, FuncName, DeclareBlock, Block([]))
+
         
 
 class Assignment(Operation):
@@ -192,7 +166,22 @@ class Expression(Operation, Returnable):
         self.operands = operands
         self.operation = operation
         self.finalType = None
+        self.baked = None
         Expression.all += [self]
+
+    def ComputeFinalType(self):
+        priority = {
+                "Boolean" : 0, 
+                "Integer" : 1, 
+                "Float" : 2, 
+                "Double" : 3
+                }
+        def sub(e : Returnable):
+            if isinstance(e, Expression):
+                e.ComputeFinalType()
+            return e.GetType()
+
+        self.finalType = list(priority.keys())[max([priority[sub(o)] for o in self.operands])]
 
     def Serialize(self):
         for op in self.operands:
@@ -205,10 +194,6 @@ class Expression(Operation, Returnable):
     def GetType(self) -> str:
         return self.finalType
 
-class Access(Statement):
-    def __init__(self, pointer : Returnable, value : Returnable):
-        self.value = value
-        self.pointer = pointer
 
 class Wrapper(Statement):
     def __init__(self, expr : Returnable):
@@ -239,7 +224,6 @@ class Return(Statement):
         return Return(None)
 
 class Class(Statement):
-    nameFieldShiftTable = {}
     def __init__(self, name : str, init : Block, manifest : Block):
         self.name = name
         self.init = init
@@ -251,17 +235,15 @@ class Extension(Operation, Returnable, Overwritable):
         self.object = object
         self.attribute = attribute
 
-def Visualize(node : Node, depth = 0, step = 4):
+def Visualize(node : Node, depth = 0, step = 2):
 
     print('  ' * depth + node.__class__.__name__)
 
     for name, val in vars(node).items():
         prefix = '  ' * (depth + 1) + f'{name}: '
         if isinstance(val, Node):
-            print(prefix)
             Visualize(val, depth + step)
         elif isinstance(val, list):
-            print(prefix)
             for item in val:
                 if isinstance(item, Node):
                     Visualize(item, depth + step)

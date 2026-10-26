@@ -1,76 +1,90 @@
 import lexer
 
+class Token():
+    def __init__(self, token, raw = None):
+        self.token = token
+        self.raw = TokenCatalog.ReverseTable[token] if raw is None and token in TokenCatalog.ReverseTable else raw
+
+    def __str__(self):
+        return self.token
+
 class TokenCatalog():
 
-    TranslationTable = sorted([
-        ["var", "Var"],
+    TranslationTable = {
+        "var": "Var",
 
-        ["int", "Integer"],
-        ["float", "Float"],
-        ["string", "String"],
-        ["bool", "Boolean"],
-        ["list", "List"],
-        ["set", "Set"],
+        "int": "Integer",
+        "float": "Float",
+        "string": "String",
+        "bool": "Boolean",
+        "list": "List",
+        "set": "Set",
 
-        ["=", "Assignment"],
-        [".", "Dot"],
-        [",", "Comma"],
+        "=": "Assignment",
+        ".": "Dot",
+        ",": "Comma",
 
-        [";", "EOL"],
-        ["(", "OpenB1"],
-        [")", "ClosedB1"],
-        ["{", "BlockOpen"],
-        ["}", "BlockClosed"],
-        ["[", "OpenB3"],
-        ["]", "ClosedB3"],
-        ['"', "Quote"],
-        ["'", "Quote"],
+        ";": "EOL",
+        "(": "OpenB1",
+        ")": "ClosedB1",
+        "{": "BlockOpen",
+        "}": "BlockClosed",
+        "[": "OpenB3",
+        "]": "ClosedB3",
+        '"': "Quote",
+        "'": "Quote",
 
-        ["+", "Plus"],
-        ["-", "Minus"],
-        ["*", "Times"],
-        ["/", "Divide"],
-        ["^", "Power"],
+        "+": "Plus",
+        "-": "Minus",
+        "*": "Times",
+        "/": "Divide",
+        "^": "Power",
 
-        ["sin", "Sine"],
-        ["cos", "Cosine"],
+        "?": "Optional",
 
-        ["--", "ConsMinus"],
-        ["++", "ConsPlus"],
-        ["+=", "Increment"],
-        ["-=", "Decrement"],
+        "sin": "Sine",
+        "cos": "Cosine",
+
+        "--": "ConsMinus",
+        "++": "ConsPlus",
+        "+=": "Increment",
+        "-=": "Decrement",
             
-        ["and", "And"],
-        ["or", "Or"],
-        ["not", "Not"],
-        ["xor", "Xor"],
+        "and": "And",
+        "or": "Or",
+        "not": "Not",
+        "xor": "Xor",
 
-        ["==", "Equals"],
-        ["!=", "NotEquals"],
-        [">=", "GreaterOE"],
-        ["<=", "LessOE"],
-        [">", "Greater"],
-        ["<", "Less"],
+        "==": "Equals",
+        "!=": "NotEquals",
+        ">=": "GreaterOE",
+        "<=": "LessOE",
+        ">": "Greater",
+        "<": "Less",
 
-        ["if", "If"],
-        ["else", "Else"],
-        ["while", "While"],
-        ["for", "For"],
-        ["foreach", "Foreach"],
-        ["return", "Return"],
+        "if": "If",
+        "else": "Else",
+        "while": "While",
+        "for": "For",
+        "foreach": "Foreach",
+        "return": "Return",
+        "fn": "Function",
+        "print": "Print",
 
-        ["null", "Null",],
-        ["true", "True"],
-        ["false", "False"],
+        "null": "Null",
+        "true": "True",
+        "false": "False",
 
-        ["using", "Using"],
-        ["extern", "External"],
-        ["direct", "Direct"],
+        "using": "Using",
+        "extern": "External",
+        "direct": "Direct",
 
-        ["class", "Class"],
-        ["instance", "Instance"],
-        ["size", "Size"]
-    ], key=lambda x : len(x[0]))
+        "class": "Class",
+        "instance": "Instance",
+        "size": "Size"
+    }
+
+    ReverseTable = {v: k for k, v in TranslationTable.items()}
 
     BooleanOperators = [
         "And", "Or", "Xor", "Equals", 
@@ -84,55 +98,36 @@ class TokenCatalog():
         "ConsMinus", "ConsPlus", "Increment", "Decrement" 
     ]
     
-
-    def GetArgSeparationSymb():
-        return [","]
-
-    def GetAllKeywords() -> list:
-        result = []
-        for translation in TokenCatalog.TranslationTable:
-            result += [translation[0]]
-        return result
-    
-    def GetMinus():
-        return "-"
     
     numeric = ["Integer", "Real", "Float", "Double"]
 
-    OperatorsConfig =  sorted([
-        ["Plus",      "BLB",  1, [numeric, numeric], numeric, "AUTO"],
-        ["Minus",     "BLB",  1, [numeric, numeric], numeric, "AUTO"],
-        ["Times",     "BLB",  2, [numeric, numeric], numeric, "AUTO"],
-        ["Divide",    "BLB",  2, [numeric, numeric], numeric, "AUTO"],
-        ["Power",     "BRB",  3, [numeric, numeric], numeric, "AUTO"],
+    OperatorsConfig = {
+        "Plus":      [-1,  1, False],
+        "Minus":     [-1,  1, False],
+        "Times":     [-1,  2, False],
+        "Divide":    [-1,  2, False],
+        "Power":     [1, 3, False],
 
-        ["Sine",       "ULR", 5, [numeric, numeric], numeric, "EXTR"],
-        ["Cosine",       "ULR", 5, [numeric, numeric], numeric, "EXTR"],
+        "Sine":      [-1, 5,  True ],
+        "Cosine":    [-1, 5,  True ],
             
-        ["And",       "BRB", -2, [["Bool"], ["Bool"]], ["Bool"], "EXTR"],
-        ["Or",        "BRB", -3, [["Bool"], ["Bool"]], ["Bool"], "EXTR"],
-        ["Not",       "ULR", -1, [["Bool"]],["Bool"], "EXTR"],
-        ["Xor",       "BRB", -3, [["Bool"], ["Bool"]], ["Bool"], "EXTR"],
+        "And":       [-1, -2, False],
+        "Or":        [-1, -3, False],
+        "Not":       [-1, -1, True ],
+        "Xor":       [-1, -3, False],
 
-        ["Equals",    "BLB",  0, [numeric, numeric], ["Bool"], "EXTR"], 
-        ["GreaterOE", "BLB",  0, [numeric, numeric], ["Bool"], "EXTR"], 
-        ["LessOE",    "BLB",  0, [numeric, numeric], ["Bool"], "EXTR"], 
-        ["Greater",   "BLB",  0, [numeric, numeric], ["Bool"], "EXTR"], 
-        ["Less",      "BLB",  0, [numeric, numeric], ["Bool"], "EXTR"], 
+        "Equals":    [-1,  0, False], 
+        "GreaterOE": [-1,  0, False], 
+        "LessOE":    [-1,  0, False], 
+        "Greater":   [-1,  0, False], 
+        "Less":      [-1,  0, False], 
             
-        ["UnDecrem.", "URB", 2.5, [numeric], numeric, "INTR"], 
-        ["UnIncrem.", "URB", 2.5, [numeric], numeric, "INTR"],
-        ["Increment", "BRB",  0, [numeric, numeric], numeric, "INTR"], 
-        ["Decrement", "BRB",  0, [numeric, numeric], numeric, "INTR"],
-        ["Negative",  "ULR",  4, [numeric], numeric, "INTR"],
-        ["MemAccess", "ULR",  4, [numeric], numeric, "INTR"]
-        
-    ], key=lambda x: x[2], reverse=True)
+        "Increment": [1, 0, False], 
+        "Decrement": [1, 0, False]
+    }
     
     def GetOperators():
-        result = []
-        for item in TokenCatalog.OperatorsConfig: result += [item[0]]
-        return result
+        return TokenCatalog.OperatorsConfig.keys()
     
     GenericTypeTokens = [
         "Integer", "Float", "Double", "Real", "String", "Boolean"
@@ -160,25 +155,25 @@ class Tokenizer():
         return token in target
 
     def Translate(raw : list) -> list:
-        result = []
-
-        for string in raw:
-            for translation in TokenCatalog.TranslationTable:
-                condition = string == translation[0]
-                if condition: 
-                    result += [translation[1]]
-                    break
-            if not condition:
+        raw = list(map(lambda x: TokenCatalog.TranslationTable[x] if x in TokenCatalog.TranslationTable else x, raw))
+        for i, string in enumerate(raw):
+            if not (string in TokenCatalog.TranslationTable.values()):
                 type = lexer.Lexer.GetCharacterType(string)
                 if type == 0:
-                    result += ["Name"]
+                    raw[i] = "Name"
                 elif type == 1:
-                    result += ["Number"]
+                    raw[i] = "Number"
                 elif string[0] == "-" and string[0:-1]:
-                    result += ["Number"]
+                    raw[i] = "Number"
                 else:
-                    result += ["ERR"]
-        return result
+                    raw[i] = "ERR"
+        return raw
+
+    def Merge(tokens : list, raw : list):
+        r = []
+        for i, t in enumerate(tokens):
+            r += [Token(t, raw[i])]
+        return r
                 
 
     
