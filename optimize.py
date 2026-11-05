@@ -7,7 +7,7 @@ class Optimizer:
     def UnfoldExpressions():
         owned = []
 
-        toSerialize = ["Plus", "Times"]
+        toSerialize = ["Plus", "Times", "Concat"]
 
         for expr in Expression.all:
             for op in expr.operands:
@@ -19,6 +19,7 @@ class Optimizer:
 
     def Bake():
         scheme = {
+            "Concat":   [True,  lambda x,y: x+y      ],
             "Plus":     [True,  lambda x,y: x+y      ],
             "Minus":    [False, lambda x,y: x-y      ],
             "Times":    [True,  lambda x,y: x*y      ],
@@ -31,7 +32,8 @@ class Optimizer:
 
         typemap = {
             "Integer": int,
-            "Float": float
+            "Float": float,
+            "String": str
         }
 
         isConstant = lambda node: node.baked is not None if isinstance(node, Expression) else isinstance(node, Content)

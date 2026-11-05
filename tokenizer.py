@@ -24,6 +24,11 @@ class TokenCatalog():
         ".": "Dot",
         ",": "Comma",
 
+        "of": "Of",
+        "from" : "From",
+        "<<" : "Attribute",
+        "remove" : "Remove",
+
         ";": "EOL",
         "(": "OpenB1",
         ")": "ClosedB1",
@@ -75,13 +80,10 @@ class TokenCatalog():
         "true": "True",
         "false": "False",
 
-        "using": "Using",
         "extern": "External",
         "direct": "Direct",
 
-        "class": "Class",
-        "instance": "Instance",
-        "size": "Size"
+        "class": "Class"
     }
 
     ReverseTable = {v: k for k, v in TranslationTable.items()}
@@ -103,7 +105,7 @@ class TokenCatalog():
 
     OperatorsConfig = {
         "Plus":      [-1,  1, False],
-        "Minus":     [-1,  1, False],
+        "Minus":     [-1,  1, True],
         "Times":     [-1,  2, False],
         "Divide":    [-1,  2, False],
         "Power":     [1, 3, False],
@@ -159,7 +161,9 @@ class Tokenizer():
         for i, string in enumerate(raw):
             if not (string in TokenCatalog.TranslationTable.values()):
                 type = lexer.Lexer.GetCharacterType(string)
-                if type == 0:
+                if len(string) > 1 and string[0] == string[-1] and string[0] in ['"', "'"]:
+                    raw[i] = "String"
+                elif type == 0:
                     raw[i] = "Name"
                 elif type == 1:
                     raw[i] = "Number"

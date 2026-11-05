@@ -9,7 +9,7 @@ class Lexer:
 
 
     def GetCharacterType(char : str) -> int:
-        if char.isalpha():
+        if char.isalpha() or "_" in char:
             return 0
         elif char.isnumeric():
             return 1
@@ -19,8 +19,30 @@ class Lexer:
     def Separate(text : str) -> list: #separates text by character type
         result = [""]
         ind = 0
+        ignore = None
 
         for i, char in enumerate(text):
+            if char == '"' and ignore == None: 
+                ignore = '"'
+                ind += 1
+                result += ['"']
+                continue
+            if char == '"' and ignore == '"': 
+                ignore = None
+                result[ind] += char
+                continue
+            if char == "'" and ignore == None: 
+                ignore = "'"
+                ind += 1
+                result += ["'"]
+                continue
+            if char == "'" and ignore == "'": 
+                ignore = None
+                result[ind] += char
+                continue
+            if ignore: 
+                result[ind] += char
+                continue
             if Lexer.GetCharacterType(text[i-1]) != Lexer.GetCharacterType(char) or Lexer.GetCharacterType(char) == 2:
                 if not (text[i-1] == "-" and Lexer.GetCharacterType(char) == 1):
                     ind+=1
@@ -32,7 +54,19 @@ class Lexer:
             if element == "": result.pop(i) 
 
         return result
-    
+
+    def GetLineByTokenIndex(uncleaned, i : int) -> int:
+        r = 0
+        m = -1
+        while i > 0:
+            m += 1
+            if uncleaned[m] == " ": continue
+            elif uncleaned[m] == "\n": 
+                r += 1
+                continue
+            i -= 1
+        return r+1
+
     def Bond(elements : list) -> list:
         keywords = TokenCatalog.TranslationTable.keys()
         special = []

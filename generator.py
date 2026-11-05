@@ -1,5 +1,5 @@
+# To be removed
 from node import *
-from debug import CInfo
 import random
 import os
 
@@ -27,7 +27,6 @@ class Project:
         meta.close()
 
         for func in Project.funcs:
-            CInfo(f"[FINAL] Created function file for {func.name}")
             f = open(f"{funcpath}{func.name}.mcfunction", "w")
             f.write("\n".join(func.content))
             f.close()
@@ -56,15 +55,35 @@ class Generator:
 
     generalContext = None
 
+
+
     unique = -1 # dont touch it please
 
     def Unique() -> int:
-        unique += 1
+        Generator.unique += 1
         return Generator.unique
 
     def TranslateStatementSet(AST : list[Node], context : MFunction = None, argmode = False):
         args = 0
         def add(s:str): context.content += [str(s)]
+
+        def declare(name):
+            convert = {
+                "Integer": ["int", "value", "0"],
+                "Float": ["float", "value", "0f"]
+            }                
+            storage = f"szn_{convert[node.type][0]}"
+            Generator.storagetable.update({node.name: storage})
+            Generator.nametable.update({node.name: node.name})
+
+        def declareA(name):
+            convert = {
+                "Integer": ["int", "value", "0"],
+                "Float": ["float", "value", "0f"]
+            }      
+            Generator.storagetable.update({node.name: storage})
+            Generator.nametable.update({node.name: node.name})
+            Generator.argumenttable.update({node.name})
 
         def Recursive(expr : Returnable) -> dict:
             if isinstance(expr, Call):
@@ -80,16 +99,15 @@ class Generator:
                     "serialized": f'{{"type": "storage", "storage": "szn:returnspace", "path": "{expr.name}"}}',
                     "additional": None
                 }
-            if isinstance(expr, Content):
-                if expr.type == "Integer" or expr.type == "Float":
-                    return {
-                        "type": "CONTENT",
-                        "content": expr.value,
-                        "access": f"value {expr.value}",
-                        "serialized": f'{{"type": "constant", "value": {expr.value}}}',
-                        "additional": {"type":expr.type}
-                    }
-            if isinstance(expr, Reference):
+            elif isinstance(expr, Content):
+                return {
+                    "type": "CONTENT",
+                    "content": expr.value,
+                    "access": f"value {expr.value}",
+                    "serialized": f'{{"type": "constant", "value": {expr.value}}}',
+                    "additional": {"type":expr.type}
+                }
+            elif isinstance(expr, Reference):
                 return {
                     "type": "REFERENCE",
                     "content": Generator.storagetable[expr.name] + ":" + Generator.nametable[expr.name],
@@ -97,7 +115,7 @@ class Generator:
                     "serialized": f'{{"type": "storage", "storage": "szn:{Generator.storagetable[expr.name]}", "path": "{Generator.nametable[expr.name]}"}}',
                     "additional": {"name": expr.name}
                 }
-            if isinstance(expr, Expression):
+            elif isinstance(expr, Expression):
 
                 if expr.baked is not None: return Recursive(Content(str(expr.baked), expr.finalType))
                 serial = '{"type": "OPERATION", "inputs": [NONE, NONE]}'
@@ -147,12 +165,21 @@ class Generator:
                     "serialized": template,
                     "additional": {"type":"BINARY" if expr.operation in polarC else "SERIAL" if len(operandsSerialized) > 1 else "UNARY", "operands": operandsSerialized}
                 }
+            elif isinstance(expr, External):
+                print("COMPO")
+                id = Generator.Unique()
+                add(f"data modify szn:external {id} set from {expr.type} {Recursive(expr.obj)["content"]} {Recursive(expr.field)["content"]}")
+                return {
+                    "type": "COMPONENT",
+                    "content": f"uh",
+                    "access": f"from storage szn:external {id}",
+                    "serialized": f'{{"type": "storage", "storage": "szn:external", "path": "{id}"}}',
+                    "additional": None
+                }
 
 
-        CInfo(f"[GEN] Parsing new set.")
 
         for node in AST:
-            CInfo(f"[GEN] Translating {node.__class__.__name__}." + (" [ARGUMENT MODE]" if argmode else ''), nt = True)
             print(" "+node.introduce())
 
             if isinstance(node, Wrapper):
@@ -165,31 +192,17 @@ class Generator:
                 Generator.TranslateStatementSet(node.body.members,mfnc)
 
             elif isinstance(node, Assignment):
-                resolved = Recursive(node.value)
-                if resolved == None : continue
-                print("storage",Generator.storagetable)
-                add(f"data modify storage szn:{Generator.storagetable[node.target.name]} {Generator.nametable[node.target.name]} set {resolved["access"]}")
+                print(node.target)
+                print(node.value)
+                resolvedV = Recursive(node.value)
+                resolvedT = Recursive(node.target)
+                
+                add(f"data modify storage {resolvedT["access"]} set {resolvedV["access"]}")
             
-            elif isinstance(node, Declaration):
-                convert = {
-                    "Integer": ["int", "value", "0"],
-                    "Float": ["float", "value", "0f"]
-                }                
-                storage = f"szn_{convert[node.type][0]}"
-                Generator.storagetable.update({node.name: storage})
-                if argmode:
-                    print(f"Stored argument {node.name}")
-                    Generator.nametable.update({node.name: node.name})
-                    Generator.argumenttable[Generator.generalContext.name] += [node.name]
-                else:
-                    Generator.nametable.update({node.name: node.name})
-                    #VVV temp solution VVV or nah?
-                    artfREF = Reference(node.name)
-                    Generator.TranslateStatementSet([Assignment(artfREF, node.value)], context)
 
             elif isinstance(node, Return):
-                resolved = Recursive(node.toReturn)
-                add(f"data modify storage szn:returnspace {context.name.lower()} set {resolved['access']}")
+                resolvedV = Recursive(node.toReturn)
+                add(f"data modify storage szn:returnspace {context.name.lower()} set {resolvedV['access']}")
                 add("return 1")
 
             elif isinstance(node, Direct):
@@ -203,6 +216,5 @@ class Generator:
                 if s:
                     add(f"execute if data storage {s}:{n} run function szn:{name}")
 
-        CInfo(f"[GEN] Latest set finished successfuly.")
 
         

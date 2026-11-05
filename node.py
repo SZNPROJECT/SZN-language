@@ -1,4 +1,3 @@
-import debug
 import tokenizer
 
 class Node:
@@ -62,13 +61,6 @@ class Direct(Statement):
         data = self.data.introduce()
         return f'"{data[:15] + ("..." if len(data) > 15 else "")}"'
 
-class LibraryName(Node):
-    def __init__(self, name):
-        self.name = name
-
-class Using(Statement):
-    def __init__(self, lib : LibraryName):
-        self.library = lib
     
 class Reference(Atomic, Returnable, Overwritable):
     typeTable = []
@@ -77,10 +69,7 @@ class Reference(Atomic, Returnable, Overwritable):
 
 
     def GetType(self):
-        for pair in Reference.typeTable:
-            if pair[0] == self.name : return pair[1]
-
-        debug.Abort(debug.Error(f"Unknown variable '{self.name}'"))
+        return "Unknown"
 
     def introduce(self):
         return f"{self.name}"
@@ -104,7 +93,6 @@ class Declaration(Statement):
         return f"{self.name}"
 
 class Call(Returnable, Statement):
-    typeTable = []
 
     def __init__(self, name : str, arg : list[Returnable]):
         self.name = name
@@ -114,12 +102,17 @@ class Call(Returnable, Statement):
         return any(pair[0] in name for pair in Call.typeTable)
 
     def GetType(self):
+        return "Unknown"
 
-        for pair in Call.typeTable:
-            if pair[0] == self.name : return pair[1]
-        
-        print(self.name, Call.typeTable)
-        return False
+class External(Returnable, Overwritable):
+
+    def __init__(self, type : str, object : Content, field : Content):
+        self.type = type
+        self.obj = object
+        self.field = field
+
+    def GetType(self):
+        return "Unknown"
 
 class Block(Statement):
     def __init__(self, Members : list[Node]):
@@ -130,18 +123,15 @@ class ArgumentDeclatation(Node):
         self.args = args
 
 class FunctionDeclaration(Statement):
+    argnametable = {}
     def __init__(self, FuncName : str, Declaration : ArgumentDeclatation, Body : Block):
 
         self.name = FuncName
         self.dec = Declaration
         self.body = Body
         self.external = False
+        FunctionDeclaration.argnametable.update({self.name: Declaration.args})
 
-
-    def ext(Type : str, FuncName : str, Declaration : ArgumentDeclatation):
-        new = FunctionDeclaration(FuncName, Declaration, Block([]))
-        new.external = True
-        return new
 
 
         
@@ -169,26 +159,34 @@ class Expression(Operation, Returnable):
         self.baked = None
         Expression.all += [self]
 
+    def Finalize(self):
+        self.ComputeFinalType()
+        if self.operation == "Plus" and any(x.GetType() == "String" for x in self.operands):
+            self.operation = "Concat"
+
     def ComputeFinalType(self):
         priority = {
                 "Boolean" : 0, 
                 "Integer" : 1, 
                 "Float" : 2, 
-                "Double" : 3
+                "Double" : 3,
+                "Unknown" : 4,
+                "String" : 5
                 }
         def sub(e : Returnable):
             if isinstance(e, Expression):
-                e.ComputeFinalType()
+                e.Finalize()
             return e.GetType()
 
         self.finalType = list(priority.keys())[max([priority[sub(o)] for o in self.operands])]
 
     def Serialize(self):
-        for op in self.operands:
+        for i, op in enumerate(self.operands):
             if isinstance(op, Expression) and op.operation == self.operation:
                 op.Serialize()
-                self.operands += op.operands
                 self.operands.remove(op)
+                for j, e in enumerate(op.operands):
+                    self.operands.insert(j+i, e)
 
 
     def GetType(self) -> str:
@@ -229,6 +227,12 @@ class Class(Statement):
         self.init = init
         self.manifest = manifest
 
+class AttributeModify(Statement):
+    def __init__(self, entity : Content, attr : str, modifier : str, value : Content):
+        self.entity = entity
+        self.attr = attr
+        self.value = value
+        self.modifier = modifier
 
 class Extension(Operation, Returnable, Overwritable):
     def __init__(self, object : Reference, attribute : Returnable):

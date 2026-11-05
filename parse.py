@@ -1,42 +1,39 @@
 # 5th version of that script
+from exception import *
 from node import *
 from functools import reduce
+from lexer import Lexer
 from collections.abc import Iterable
 from tokenizer import Token, TokenCatalog
 from difflib import SequenceMatcher
+import time
 
-class ParseException (Exception):
-    def __init__(self, info : str, fix : str = None, expected = "something..."):
-        self.info = info
-        self.exp = expected 
-        self.fix = fix if fix != None else f"Add \"{expected}\"" 
-
-        super().__init__(f'\033[1;41mSyntaxError: {self.info}\033[0m\n\033[14;44mFix: {self.fix}\033[0m')
 
 class Result:
+    original = None
     def __init__(self, value, end : int):
         self.value = value
         self.end = end
 
     def __bool__(self):
-        return not isinstance(self.value, ParseException)
+        return not isinstance(self.value, SZNExpception)
 
     def __str__(self):
         s = lambda obj: [s(x) for x in obj] if isinstance(obj, list) else str(obj)
-        return f"{s(self.value)} ending at {self.end}"
+        return f"{s(self.value)} at line {Lexer.GetLineByTokenIndex(Result.original,self.end)}, token {self.end}"
 
 class c:
 
-    def match(expected : Token):
+    def match(expected : Token): #single matches 
         def run(p, tokens : list[Token]):
-            if p >= len(tokens): return Result(ParseException("Insufficient length."), p)
+            if p >= len(tokens): return Result(SyntaxException("Insufficient length."), p)
             if tokens[p].token == expected.token:
                 return Result(tokens[p], p + 1)
             else:
-                return Result(ParseException(f"Expected \"{expected.raw}\", got \"{tokens[p].raw}\".", f"Replace \"{tokens[p].raw}\" with \"{expected.raw}\"."), p)
+                return Result(SyntaxException(info=f"Expected \"{expected.raw}\", got \"{tokens[p].raw}\".", fix = f"Replace \"{tokens[p].raw}\" with \"{expected.raw}\".", got = tokens[p].raw, expected=expected.raw), p)
         return run
 
-    def unfold(parser):
+    def unfold(parser): # flattens the result?
         def run(p, tokens : list[Token]):
             def subf(s):
                 if not isinstance(item, list): return s
@@ -47,50 +44,55 @@ class c:
                         yield item
             r = parser(p, tokens)
             if isinstance(r, list): r.value = list(subf(r.value))
-            return r.value
+            return r
 
         return run
 
-    def map(parser, f):
+    def map(parser, f): # maps result with provided function if success, does nothing the result otherwise
         def run(p, tokens):
             r = parser(p, tokens)
             if r: return Result(f(r.value), r.end)
             return r
         return run
     
-    def may(parser):
+    def may(parser): # ingnores the failure
         def run(p, tokens : list[Token]):
             r = parser(p, tokens)
             if r : return r
             else : return Result([], p)
         return run
     
-    def many(parser):
+    def many(parser): # advances until first failure, then returns the sequence, if none was captured, returns failure
         def run(p, tokens : list[Token]):
             acc = []
             while True:
                 r = parser(p,tokens)
-                if r.end == p: return Result(acc, p)
+                if r.end <= p: return Result(acc, p)
                 if r:
                     p = r.end
                     acc.append(r.value)
                 else: return Result(acc, p)
         return run
 
-    def until(parser, stop):
+    def until(parser, stop, capture = False): # acts like "many()" with custom terminator, if finds none, returns failure
         def run(p, tokens : list[Token]):
             acc = []
             while True:
                 r = parser(p,tokens)
                 #if r.end == p: return Result(acc, p)
+                s = stop(p,tokens)
                 if r:
                     p = r.end
                     acc.append(r.value)
-                elif stop(p,tokens): return Result(acc, p)
+                elif s: 
+                    if capture:
+                        acc.append([s.value]) 
+                        return Result(acc, s.end)
+                    else : return Result(acc, r.end)
                 else : return r
         return run
 
-    def seq(*parsers):
+    def seq(*parsers): # a regular sequence, returns failure if any of its parsers fails
         def run(p, tokens : list[Token]):
             acc = []
             cur = p
@@ -103,43 +105,70 @@ class c:
             return Result(acc, cur)
         return run
     
-    def any(*parsers):
+    def any(*parsers, exp = "Anything"): # tries all given parsers returns the result of the frist successful one, if none succeeds, returns most advanced failure
         def run(p, tokens : list[Token]):
-            rs = []
             rf = []
             for par in parsers:
                 res = par(p, tokens)
-                if res: rs.append(res)
+                if res:return res
                 else: rf.append(res)
 
-            if len(rs) == 0:
-                best = rf[0]
-                for res in rf:
-                    if res.end > best.end: best = res
-                return best
-            else : return rs[0] 
+            best = rf[0]
+            for res in rf:
+                if res.end > best.end: best = res
+            best.value.expected = exp
+            return best
         return run
-    
-    def sep(content_parser, separator_parser):
-        return c.map(c.seq(c.many(c.seq(content_parser, separator_parser)), content_parser), lambda x: [s for p in x[0] for s in p] + [x[1]])
 
+    def anyB(*parsers, exp = None): # tries all parses, returns most advanced result
+        def run(p, tokens):
+            r = max([par(p, tokens) for par in parsers], key = lambda x: x.end + int(not isinstance(x.value, SZNExpception)))
+            if isinstance(r.value, SZNExpception) and exp: 
+                return Result(SyntaxException(f'Expected {exp}, got "{r.value.got}".', r.value.got, f'Add or replace "{r.value.got}" with {"an" if exp[0].lower() in 'aeiou' else "a"} {exp} of any kind.'), r.end)
+            return r
+        return run
+
+    def sep(content_parser, separator_parser): # tries to parse by CONTENT, SEP, ... CONTENT. pattern
+        return c.map(c.until(c.seq(content_parser, separator_parser), content_parser, capture=True), lambda x: [z for y in x for z in y])
+        #return c.map(c.seq(c.many(c.seq(content_parser, separator_parser)), content_parser), lambda x: [s for p in x[0] for s in p] + [x[1]])
+
+    def all(parser): # success if (one or more) and fully finished to the last token, failure otherwise   
+        def run(p, tokens : list[Token]):
+            acc = []
+            while True:
+                r = parser(p,tokens)
+                if r.end <= p: return Result(acc, p)
+                if r:
+                    p = r.end + 1
+                    acc.append(r.value)
+                else: return r
+        return run
+
+    def fail(): #always returns InternalException that ends at -99
+        def run(p, *anything):
+            return Result(InternalException("Always false. (c.fail)"), -99)
+        return run
             
-
+def rec(x):
+    if isinstance(x, Iterable):
+        for y in x:
+            rec(y)
+    else:print(x)
 class Constructor:
     def Construct(tokens : list[Token]):
         t = lambda x, y = None: c.match(Token(x, y)) 
         n = c.match(Token("Name", "Name"))
 
-        def _returnable(allow_exp = True):
+        def _returnable(*excepted):
             # No sign of God past this comment.
             operation = c.any(*[t(token) for token in TokenCatalog.GetOperators()])
             unary = c.any(*[t(token) for token in TokenCatalog.GetOperators() if TokenCatalog.OperatorsConfig[token][2]])
-            right = c.any(*[t(token) for token in TokenCatalog.GetOperators() if TokenCatalog.OperatorsConfig[token][0]])
             def fold(parser : "function") -> Expression: #expects the set to be valid, expamle: ret-able, opToken, ret-able...
                 def run(p, tokens : list[Token | Returnable]):
                     out = parser(p, tokens)
-                    if isinstance(out.value, ParseException): return out
+                    if isinstance(out.value, SZNExpception): return out
                     seq = out.value
+                    if len(seq) < 2: return Result(InternalException(),p+1)
                     for i, token in enumerate(seq):
                         if i % 2:
                             seq[i] = Expression(token.token, [None, None])
@@ -184,42 +213,73 @@ class Constructor:
                                     r.operands[0] = e
                                 else: continue
                                 seq.pop(i)
-                    seq[0].ComputeFinalType()
+                    seq[0].Finalize()
                     return Result(seq[0], out.end)
 
                         
                 return run
 
             def run(p, tokens : list[Token]):
-                execute = []
-                if allow_exp : execute = [fold(c.any(c.sep(_returnable(allow_exp=False), operation)))]
+                expr =      fold(c.sep(_returnable("expr"), operation))
                 reference = c.map(n, lambda x: Reference(x.raw))
-                number = c.any(c.map(c.seq(t("Number"), t("Dot"), t("Number")), lambda x: Content(float(''.join([y.raw for y in x])), "Float")), c.map(t("Number"), lambda x: Content(int(x.raw), "Integer")))
-                call = c.map(c.seq(n, t("OpenB1"), c.may(c.sep(_returnable(), t("Comma"))), t("ClosedB1")), lambda x: Call(x[0].raw, [y[0] for i, y in enumerate(x[2]) if (i + 1) % 2 != 0]))
-                execute += [number, call, reference]
-                o = c.any(*execute)(p, tokens)
+                boolean =   c.map(c.any(t("True"), t("False")), lambda x: Content("0b" if x.token == "False" else "1b", "Boolean"))
+                number =    c.any(c.map(c.seq(t("Number"), t("Dot"), t("Number")), lambda x: Content(float(''.join([y.raw for y in x])), "Float")), c.map(t("Number"), lambda x: Content(int(x.raw), "Integer")))
+                call =      c.anyB(c.map(c.seq(n, t("OpenB1"), t("ClosedB1")), lambda x: Call(x[0].raw,[])), c.map(c.seq(n, t("OpenB1"), c.sep(_returnable(), t("Comma")), t("ClosedB1")), lambda x: Call(x[0].raw, [y for i, y in enumerate(x[2]) if (i + 1) % 2 != 0])))
+                embeded =   c.map(c.seq(t("OpenB1"), _returnable(), t("ClosedB1")), lambda x: x[1])
+                unaryOP =   c.map(c.seq(unary, _returnable("expr")), lambda x: Expression(x[0].raw if x[0].token != "Minus" else "Negative", [x[1]]))
+                string =    c.map(t("String"), lambda x: Content(x.raw[1:-1], "String"))
+                component = c.map(c.seq(_returnable("component", "expr"), c.any(t("Of"), t("From")), _returnable("component", "expr")), lambda x: External("entity" if x[1].token == "Of" else "storage", x[2], x[0]))
+                execute = [e for e in [boolean, expr, call, reference, number, embeded, unaryOP, string, component] if e not in [locals()[n] for n in excepted]]
+                o = c.anyB(*execute)(p, tokens)
+                #Visualize(o.value)
                 return o
 
             return run
 
         def _return():
-            return c.map(c.seq(t("Return"), _returnable()), lambda x: Return(x[1]))
+            return c.anyB(c.map(c.seq(t("Return"), _returnable()), lambda x: Return(x[1])), c.map(t("Return"), lambda x: Return(None)))
 
         def _block():
-            return c.map(c.seq(t("BlockOpen"), c.until(c.any(*statements), t("BlockClosed"))), lambda x: Block([s for s in x[1]]))
+            return c.map(c.seq(t("BlockOpen"), c.until(c.anyB(*statements), t("BlockClosed"))), lambda x: Block([s for s in x[1]]))
 
         def _argumentDeclaration():
-            return c.map(c.seq(t("OpenB1"), c.may(c.sep(n, t("Comma"))), t("ClosedB1")), lambda x: ArgumentDeclatation([y.raw for i, y in enumerate(x[1]) if (i + 1) % 2 != 0]))
+            return c.map(
+                c.unfold(c.seq(t("OpenB1"), c.may(c.any(c.sep(n, t("Comma")), n)), t("ClosedB1"))), 
+                lambda x: ArgumentDeclatation([y.raw for i, y in enumerate(x[1]) if (i + 1) % 2 != 0])
+                )
+        
         def _functionDeclaration():
             return c.map(c.seq(t("Function"), n, _argumentDeclaration(), _block()), lambda x: FunctionDeclaration(x[1].raw, x[2], x[3]))
 
+        def _assignment():
+            return c.map(c.seq(_returnable(), t("Assignment"), _returnable()), lambda x: Assignment(x[0], x[2]))
+
+        def _direct():
+            return c.map(c.seq(t("Direct"), _returnable()), lambda x: Direct(x[1]))
+
+        def _attributeModify():
+            return c.anyB(
+                c.map(
+                    c.seq(n,n, t("Of"), _returnable(), t("Assignment"), _returnable()),
+                    lambda x: AttributeModify(x[3], x[0].raw, x[1].raw, x[5])
+                ),
+                c.map(
+                    c.seq(t("Remove"), n, n, t("Of"), _returnable()),
+                    lambda x: AttributeModify(x[4], x[1].raw, x[2].raw, False)
+                )
+            )#air_drag_modifier of "@s" lifted total = 2 
+             #remove air_drag_modifier lifted of "@s"
+        
         statements = [
-            _return()
+            _attributeModify(),
+            _direct(),
+            _return(),
+            _assignment()
         ]
         root_statements = [
             _functionDeclaration()
         ]
-        AST = c.seq(*root_statements)(0,tokens)
+        AST = c.all(c.anyB(*root_statements))(0,tokens)
         print(AST)
         return AST.value
         

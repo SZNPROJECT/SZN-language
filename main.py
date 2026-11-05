@@ -1,12 +1,10 @@
-from debug import CInfo
-
 import lexer
 import tokenizer
 import parse
 import node
 import time
-import extract
 import generator
+import moderngen
 import optimize
 
 from sys import argv
@@ -21,15 +19,12 @@ def main(custom = ''):
     originalfile.close()
 
 
-    stringExtract, extracted = extract.Extractor.RawExtractSingular(original, "'", '"')
-
-    extract.Extractor.storage.update({"string": stringExtract}) #???
-
-    separated = lexer.Lexer.Separate(extracted)
+    separated = lexer.Lexer.Separate(original)
     bonded = lexer.Lexer.Bond(separated)
+    parse.Result.original = bonded
     cleaned = lexer.Lexer.Clean(bonded)
     tokenized = tokenizer.Tokenizer.Merge(tokenizer.Tokenizer.Translate(cleaned), cleaned)
-    print(cleaned, "\n")
+    [print(t) for t in tokenized]
     AST = parse.Constructor.Construct(tokenized)
 
     optimize.Optimizer.UnfoldExpressions()
@@ -37,8 +32,10 @@ def main(custom = ''):
 
     for s in AST : node.Visualize(s)
 
-    generator.Generator.TranslateStatementSet(AST)
-    generator.Project.Build(argv[2]) # code.work() life.success() fps = 999
+    moderngen.Generator.ParseAST(AST)
+    moderngen.Central.Build("Test", argv[2]) # code.work() life.success() fps = 999
+
+    print(time.monotonic()-start_time)
 
 
 
